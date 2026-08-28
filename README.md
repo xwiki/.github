@@ -17,6 +17,7 @@ repository that needs something different simply keeps its own copy, which alway
 | --- | --- |
 | [`.github/pull_request_template.md`](.github/pull_request_template.md) | The description a new pull request is pre-filled with. |
 | [`.github/FUNDING.yml`](.github/FUNDING.yml) | The "Sponsor" button, pointing at the XWiki Open Collective. |
+| [`.github/SECURITY.md`](.github/SECURITY.md) | Where to report a vulnerability, pointing at the XWiki security policy. |
 
 Nothing has to be done in a repository to pick these up: deleting its own copy is what makes the
 default apply.
