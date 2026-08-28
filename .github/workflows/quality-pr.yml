@@ -24,12 +24,30 @@
 ## "quality" build: that one checks master after the merge, with the tests and the coverage, whereas
 ## this one only needs the sources and the bytecode of the changed modules.
 ##
-## This is the shared implementation, called by a stub workflow in each XWiki repository. The stub
-## owns the "on" trigger, the concurrency group and the fork guard, because a reusable workflow
-## cannot declare event triggers of its own, and because the caller must not resolve the required
-## SONAR_TOKEN secret for a run that is going to be skipped anyway. The stub is also where the
-## GITHUB_TOKEN permissions are set: for a reusable workflow they are the caller's, and this job
-## needs no more than "contents: read".
+## The two rules do not reach the same pull requests, because they do not cost the same to check.
+## Checkstyle is a verdict the build gives on its own, with no credentials involved, so it is checked
+## on every pull request, the ones coming from a fork included. The SonarQube half needs a token that
+## can write to the XWiki SonarCloud projects, and a job holding that token must only ever build code
+## its author could have pushed into the repository themselves: Maven executes what the pull
+## request's own poms tell it to -- a build extension, a plugin resolved from a repository the pom
+## adds -- so building a fork's change alongside the token is handing the token to whoever opened the
+## pull request. The SonarQube half is therefore reached in two ways, one stub each, and the "sonar"
+## input says which half a given call is doing:
+##
+##   - a branch pushed into the repository, on "pull_request", which is the case GitHub hands the
+##     repository secrets to and whose author needed write access to create it;
+##   - a fork whose author GitHub reports as a member of the organization owning the repository, on
+##     "pull_request_target", which is given the secrets that "pull_request" withholds from a fork.
+##
+## Every other pull request -- a fork from someone outside the organization -- gets the Checkstyle
+## verdict here and its SonarQube verdict from the master analysis after the merge, as before.
+##
+## This is the shared implementation, called by those stub workflows in each XWiki repository. A stub
+## owns the "on" trigger, the concurrency group and the guard deciding which pull requests are its
+## own, because a reusable workflow cannot declare event triggers of its own and because the trust
+## decision belongs next to the secret it releases. A stub is also where the GITHUB_TOKEN permissions
+## are set: for a reusable workflow they are the caller's, and this job needs no more than
+## "contents: read".
 name: Pull request quality checks
 
 on:
@@ -48,23 +66,63 @@ on:
           settings.xml, cannot declare.
         type: string
         default: snapshot,legacy
+      ref:
+        description: >
+          What to check out, or the empty string to let actions/checkout pick the default of the
+          event. A pull_request run defaults to the pull request merged into its base, which is what
+          deserves the verdict. A pull_request_target run defaults to the base branch, which holds
+          none of the change, so the stub triggered that way names the pull request's head instead.
+          It names it as refs/pull/<number>/head, a ref of the repository being built that GitHub
+          maintains itself, so that nothing is fetched from the fork and no remote of it is
+          configured.
+        type: string
+        default: ''
+      sonar:
+        description: >
+          Whether this call runs the SonarQube half on top of the Checkstyle one. False is the shape
+          a run with no SONAR_TOKEN has to take: the build still gives the Checkstyle verdict, and
+          nothing is analyzed or published.
+        type: boolean
+        default: false
     secrets:
       SONAR_TOKEN:
-        description: The SonarCloud token the analysis authenticates with.
-        required: true
+        description: >
+          The SonarCloud token the analysis authenticates with. Needed when the sonar input is true,
+          and unused otherwise, a run doing Checkstyle alone being precisely a run that was given no
+          token.
+        required: false
 
 jobs:
   analysis:
     name: Analyze
+    ## The dependency bots are left out, here rather than in the stubs because it is a judgement about
+    ## the checks and not about the trust the caller decides on. A version bump writes no Java line
+    ## for Checkstyle or SonarQube to have an opinion on, and the bots open enough pull requests, each
+    ## pushed again every time it rebases, that building them all would be most of what this workflow
+    ## ever spends. What identifies them is the author and deliberately not the renovate/* or
+    ## dependabot/* branch name: whoever opens a pull request picks its branch name, so reading that
+    ## would be offering a way to ask for the checks to be skipped. Renovate is listed twice because
+    ## the XWiki repositories run it as their own renovate-bot account while the hosted app posts as
+    ## renovate[bot]. github-actions[bot] is deliberately not listed: the backport action opens pull
+    ## requests under it, and those carry real code.
+    if: >-
+      !contains(fromJSON('["renovate-bot", "renovate[bot]", "dependabot[bot]"]'),
+                github.event.pull_request.user.login)
     runs-on: ubuntu-latest
     env:
       MAVEN_PROFILES: ${{ inputs.maven-profiles }}
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ inputs.ref }}
           ## SonarCloud derives the lines the pull request changed from the git history, and the
           ## module selection below diffs against the base branch.
           fetch-depth: 0
+          ## Nothing after this talks to GitHub again: the module selection reads the history this
+          ## checkout already fetched, and Maven only ever reaches the artifact repositories. On a
+          ## pull_request_target run the GITHUB_TOKEN is writable unless the caller narrows it, and
+          ## leaving it in .git/config would leave it where the build that runs next could read it.
+          persist-credentials: false
 
       ## The JDK to build with is the one the branch targets, which is the xwiki.java.version property
       ## of the effective root pom. It is read with Maven rather than searched for in the pom text
@@ -334,6 +392,7 @@ jobs:
       ## into the script before the shell runs it, so interpolating one lets a crafted branch name run
       ## commands on the runner, where the token is.
       - name: Analyze
+        if: inputs.sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           PR_KEY: ${{ github.event.pull_request.number }}
@@ -359,6 +418,7 @@ jobs:
       ## Security hotspots are not part of the verdict either: they ask for a human review, which
       ## cannot happen between the analysis and the merge.
       - name: Fail on the issues the pull request introduces
+        if: inputs.sonar
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
           PR_KEY: ${{ github.event.pull_request.number }}
