@@ -1,0 +1,55 @@
+/*
+ * See the NOTICE file distributed with this work for additional
+ * information regarding copyright ownership.
+ *
+ * This is free software; you can redistribute it and/or modify it
+ * under the terms of the GNU Lesser General Public License as
+ * published by the Free Software Foundation; either version 2.1 of
+ * the License, or (at your option) any later version.
+ *
+ * This software is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+ * Lesser General Public License for more details.
+ *
+ * You should have received a copy of the GNU Lesser General Public
+ * License along with this software; if not, write to the Free
+ * Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+ * 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+ */
+
+/*
+ * The Renovate settings shared by the XWiki repositories. A repository uses them with:
+ *
+ *   "extends": ["github>xwiki/.github//renovate/default.json5"]
+ *
+ * and then adds whatever is specific to it. Beware of how Renovate merges the two: "packageRules"
+ * of the preset and of the repository are concatenated, the preset's coming first, but every other
+ * array is replaced wholesale by the repository's value. So a repository that needs an extra entry
+ * in "ignoreDeps" has to repeat the entries below alongside its own.
+ */
+{
+  // We want all suggestions right away
+  "prHourlyLimit" : 0,
+  "prConcurrentLimit" : 0,
+
+  // Create different pull request for each major upgrade
+  "separateMajorMinor": true,
+  "separateMultipleMajor": true,
+
+  // Skip Eclipse M2E special setup "dependency"
+  "ignoreDeps": ["org.eclipse.m2e:lifecycle-mapping"],
+
+  // Set a "dependencies" label on all pull requests created by Renovate
+  "labels": ["dependencies"],
+
+  "packageRules": [
+    // There is no point trying to find updates for commons dependencies: Commons, Rendering and
+    // Platform are released together, so their versions move as one and never on Renovate's watch.
+    // A repository that also produces such dependencies disables its own prefixes on top of this.
+    {
+      "matchPackagePrefixes": ["org.xwiki.commons:"],
+      "enabled": false
+    }
+  ]
+}
