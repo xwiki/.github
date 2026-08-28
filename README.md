@@ -49,6 +49,7 @@ concurrency:
 
 jobs:
   analysis:
+    name: Quality
     ## A pull_request run from a fork gets no repository secrets, so the analysis has no token to
     ## authenticate with. Skip those rather than fail them.
     if: github.event.pull_request.head.repo.full_name == github.repository
