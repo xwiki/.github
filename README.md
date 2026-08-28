@@ -55,6 +55,10 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
       contents: read
+    ## Referenced by branch and not by commit hash, on purpose: pinning would mean a pull request in
+    ## every repository for every change to the shared workflow, which is the duplication this
+    ## indirection removes. What pinning protects against, a third party repointing the ref under
+    ## us, does not apply to a repository the XWiki committers own themselves.
     uses: xwiki/.github/.github/workflows/quality-pr.yml@master
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -76,12 +80,19 @@ on:
 
 jobs:
   backport:
+    ## Referenced by branch and not by commit hash, on purpose: pinning would mean a pull request in
+    ## every repository for every change to the shared workflow, which is the duplication this
+    ## indirection removes. What pinning protects against, a third party repointing the ref under
+    ## us, does not apply to a repository the XWiki committers own themselves.
     uses: xwiki/.github/.github/workflows/backport.yml@master
 ```
 
-The stubs reference `@master`, so a change here reaches every repository on its next run. That is the
-point of this repository, and also the reason to treat a change to a workflow as a change to all of
-them: there is no per-repository staging.
+The stubs reference `@master` rather than a commit hash, so a change here reaches every repository
+on its next run. That is the point of this repository, and also the reason to treat a change to a
+workflow as a change to all of them: there is no per-repository staging. It is why the stubs carry
+that note, and why SonarQube's `githubactions:S7637` ("use full commit SHA hash for this
+dependency") is accepted on those two lines — the rule guards against a third party repointing a
+mutable ref, which does not describe a repository the XWiki committers own themselves.
 
 ## Renovate preset
 
