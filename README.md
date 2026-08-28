@@ -117,3 +117,7 @@ every other array is replaced wholesale by the repository's value. A repository 
 
 `xwiki-commons`, `xwiki-rendering` and `xwiki-platform` today. The community health files reach the
 rest of the organization on their own.
+
+## License
+
+LGPL 2.1, as the rest of XWiki. See [`LICENSE`](LICENSE).
