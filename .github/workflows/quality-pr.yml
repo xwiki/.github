@@ -123,6 +123,14 @@ jobs:
           ## pull_request_target run the GITHUB_TOKEN is writable unless the caller narrows it, and
           ## leaving it in .git/config would leave it where the build that runs next could read it.
           persist-credentials: false
+          ## Checking out the head of a fork's pull request is what a pull_request_target caller asks
+          ## for, and checkout refuses it unless the workflow says it means it. What the refusal
+          ## guards against is a pull request's own code running with the base repository's secrets
+          ## and token, which is the whole reason such a caller exists: it hands SONAR_TOKEN to an
+          ## analysis of code the base branch does not hold yet. Whether the code is trusted enough
+          ## for that is the caller's judgement, made by the guard on who may reach this workflow, so
+          ## it is the caller and not this step that keeps the trust boundary.
+          allow-unsafe-pr-checkout: true
 
       ## The JDK to build with is the one the branch targets, which is the xwiki.java.version property
       ## of the effective root pom. It is read with Maven rather than searched for in the pom text
@@ -150,6 +158,16 @@ jobs:
           distribution: temurin
           java-version: ${{ steps.java.outputs.version }}
           cache: maven
+          ## A cache is written into the scope of the ref the run is for, and a pull_request_target
+          ## run is for the base branch, so a cache saved on that trigger lands in the scope master
+          ## and every other pull request restore from -- holding a repository this job filled by
+          ## building the pull request's own code. The key hashes the poms and a cache entry is
+          ## immutable once written, so reaching a run that reads it takes a pull request leaving the
+          ## poms alone and a key nothing has claimed yet; that is a narrow way in rather than none,
+          ## and saving a cache is not worth leaving it open. Reading one is not the same question:
+          ## what comes back was built from the base branch and holds published artifacts, so those
+          ## runs still start from a warm repository and only the save is dropped.
+          cache-read-only: ${{ github.event_name == 'pull_request_target' }}
 
       ## A pull request analysis only ever reports on the pull request's own new code, and every
       ## condition of the XWiki quality gate is on a new code metric, so a module the pull request does
