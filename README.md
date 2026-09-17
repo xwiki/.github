@@ -45,14 +45,24 @@ stranger's change next to the token is handing them the token. That gives three 
 | Trigger | Which pull requests | What they are checked with |
 | --- | --- | --- |
 | `pull_request` | a branch pushed into the repository | Checkstyle and SonarQube |
-| `pull_request_target` | a fork whose author GitHub reports as an organization member | Checkstyle and SonarQube |
+| `pull_request_target` | a fork whose author is a *public* member of the organization | Checkstyle and SonarQube |
 | `pull_request` | any other fork | Checkstyle only, SonarQube after the merge |
 
 Membership is read from `github.event.pull_request.author_association`, which GitHub computes and no
 pull request author can set. It is the only way to ask the question inside a workflow: a
 `GITHUB_TOKEN` cannot read organization membership, and a token that could would be one more secret
-to hold. It covers members whose membership is private. `COLLABORATOR` — someone granted access to
-one repository — is deliberately not trusted, that access being possibly read-only.
+to hold.
+
+It only ever reports membership that is **public**, which is the catch. `author_association` is
+computed for whoever is asking and says what that asker is allowed to see, and the payload a workflow
+is handed is computed for no one in particular — so a member who has left their `xwiki` membership
+private arrives as `CONTRIBUTOR`, the guard does not match, and their fork falls to the third case
+above and is checked with Checkstyle alone. Having one's fork pull requests analyzed therefore means
+setting one's membership to public, on <https://github.com/orgs/xwiki/people> (*Organization
+visibility* → *Public*). That is each member's own setting and nothing here can make it for them.
+
+`COLLABORATOR` — someone granted access to one repository — is deliberately not trusted, that access
+being possibly read-only.
 
 The dependency bots — `renovate-bot`, `renovate[bot]` and `dependabot[bot]` — are excluded from both,
 in the shared workflow rather than in the stubs: a version bump writes no line either check has an
@@ -140,7 +150,8 @@ jobs:
 ## below therefore limits this workflow to authors GitHub reports as members of the organization
 ## owning this repository, the people on https://github.com/orgs/xwiki/people, for whom building
 ## their code with the token grants nothing they could not already reach. Every other fork keeps the
-## Checkstyle-only verdict quality-pr.yml gives it.
+## Checkstyle-only verdict quality-pr.yml gives it -- and, as the guard explains, that includes a
+## member whose membership is private, GitHub not reporting one here.
 ##
 ## Two consequences of pull_request_target are worth knowing. It runs the copy of this file held by
 ## the base branch and not the one in the pull request, so a change to this file cannot be tried out
@@ -168,10 +179,15 @@ jobs:
     ## author_association is computed by GitHub and is no part of what the pull request's author
     ## sends, so it cannot be claimed by crafting anything; it is also the only way to ask this
     ## question here, a workflow's GITHUB_TOKEN being unable to read organization membership and a
-    ## token that could being one more secret to hold. It covers members whose membership is private,
-    ## which this organization has. COLLABORATOR, someone granted access to this repository alone, is
-    ## deliberately left out: that access can be read-only, and read-only is not the "could have
-    ## pushed this branch themselves" that this guard stands in for.
+    ## token that could being one more secret to hold. What it reports is what the one asking is
+    ## allowed to see, and the payload a workflow is handed is computed for no one in particular, so
+    ## only a membership its owner has made public reads as MEMBER here: a member who has kept theirs
+    ## private arrives as CONTRIBUTOR and their fork gets the Checkstyle-only verdict quality-pr.yml
+    ## gives. Being analyzed therefore asks its author to set their membership to public, on
+    ## https://github.com/orgs/xwiki/people, which is theirs to set and not this workflow's to read
+    ## around. COLLABORATOR, someone granted access to this repository alone, is deliberately left
+    ## out: that access can be read-only, and read-only is not the "could have pushed this branch
+    ## themselves" that this guard stands in for.
     ## This condition is the exact negation of quality-pr.yml's, so that a pull request is built once
     ## and not twice; changing one of the two means changing the other.
     if: >-
