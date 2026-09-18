@@ -446,6 +446,7 @@ jobs:
           import os
           import sys
           import time
+          import urllib.error
           import urllib.parse
           import urllib.request
 
@@ -469,14 +470,48 @@ jobs:
           PULL_REQUEST = os.environ['PR_KEY']
 
 
+          ## How many times a web API call is tried before the step gives up on it.
+          ATTEMPTS = 3
+
+
+          class ApiError(Exception):
+              """A SonarCloud web API call that did not answer, carrying what the server said about
+              it. urllib drops that: the exception it raises holds the status line alone, while the
+              body is where SonarCloud names the component or the parameter it took issue with, so
+              the body is read here or it is lost."""
+
+              def __init__(self, url, code, detail):
+                  super().__init__('[%s] answered [%s]: %s' % (url, code, detail))
+                  self.code = code
+                  self.detail = detail
+
+
           def api(path, parameters):
               """The answer of a SonarCloud web API call, parsed. The parameters are passed as a
-              mapping and not as keyword arguments because one of them is named "from"."""
+              mapping and not as keyword arguments because one of them is named "from". A transport
+              failure and a 5xx are tried again rather than raised: this step stands between an
+              analysis that already succeeded and a verdict on a pull request, and a hiccup on the
+              way to the server is not something the pull request did."""
               url = '%s%s?%s' % (SERVER, path, urllib.parse.urlencode(parameters))
               request = urllib.request.Request(url,
                   headers={'Authorization': 'Bearer %s' % os.environ['SONAR_TOKEN']})
-              with urllib.request.urlopen(request, timeout=120) as answer:
-                  return json.load(answer)
+              for attempt in range(1, ATTEMPTS + 1):
+                  try:
+                      with urllib.request.urlopen(request, timeout=120) as answer:
+                          return json.load(answer)
+                  except urllib.error.HTTPError as failure:
+                      error = ApiError(url, failure.code,
+                                       failure.read().decode('utf-8', 'replace').strip())
+                      ## The server understood the call and refused it, so asking it again refuses
+                      ## again. Only what the server itself calls its own fault is worth a retry.
+                      if failure.code < 500:
+                          raise error from None
+                  except urllib.error.URLError as failure:
+                      error = ApiError(url, 'nothing', failure.reason)
+                  if attempt == ATTEMPTS:
+                      raise error
+                  print('::warning::%s, trying again' % error)
+                  time.sleep(5 * attempt)
 
 
           def wait_for_the_report():
@@ -526,9 +561,26 @@ jobs:
                   ## The endpoint returns a thousand lines at most, so a file whose issues are far
                   ## apart takes several calls.
                   first, last = remaining[0], remaining[0] + 999
-                  answer = api('/api/sources/lines',
-                               {'key': component, 'pullRequest': PULL_REQUEST,
-                                'from': first, 'to': last})
+                  try:
+                      answer = api('/api/sources/lines',
+                                   {'key': component, 'pullRequest': PULL_REQUEST,
+                                    'from': first, 'to': last})
+                  except ApiError as failure:
+                      if failure.code != 404:
+                          raise
+                      ## The analysis reports an issue on a file whose source the server does not
+                      ## serve for this pull request, so which of its lines the pull request wrote
+                      ## cannot be known. This verdict blames a line only on SonarCloud's own word
+                      ## that the pull request wrote it, so with that word missing it blames none of
+                      ## them and says so, rather than failing a pull request the analysis found
+                      ## nothing wrong with. The issues of that file are still listed, among the
+                      ## ones the pull request inherited. What is said is the server's own
+                      ## detail rather than the whole failure, which only repeats the component and
+                      ## the URL of the very call this comment describes.
+                      print('::warning::SonarCloud serves no source for [%s] in this pull request, '
+                            'so the issues it reports there are not checked against the lines the '
+                            'pull request writes [%s]' % (component, failure.detail))
+                      return set()
                   written.update(line['line'] for line in answer['sources'] if line.get('isNew'))
                   remaining = [line for line in remaining if line > last]
               return written
@@ -584,5 +636,11 @@ jobs:
               return 0
 
 
-          sys.exit(main())
+          try:
+              sys.exit(main())
+          except ApiError as failure:
+              ## Not a traceback: this step is read by whoever opened the pull request, and what
+              ## tells them whether it is theirs to fix is which call failed and what came back.
+              sys.exit('::error::A SonarCloud web API call failed, so this pull request could not '
+                       'be judged: %s' % failure)
           PYTHON
