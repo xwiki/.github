@@ -287,6 +287,15 @@ every other array is replaced wholesale by the repository's value. A repository 
 `xwiki-commons`, `xwiki-rendering` and `xwiki-platform` today. The community health files reach the
 rest of the organization on their own.
 
+In those repositories the stubs have to be on **every maintained branch**, and identical to the ones
+above, not only on `master`. A workflow only runs for a pull request when the branch it targets
+carries it: `pull_request` runs the copy in the pull request merged into its base, which a
+pull request that does not add the file itself does not have, and `pull_request_target` runs the
+copy held by the base branch. A stable branch without `quality-pr.yml` and `quality-pr-sonar.yml`
+therefore gets no `Quality / Analyze` check at all, on the backport pull requests that target it
+too. Opening a new `stable-*` branch from `master` carries them over; a change to a stub here means
+a pull request on each maintained branch as well as on `master`.
+
 ## License
 
 LGPL 2.1, as the rest of XWiki. See [`LICENSE`](LICENSE).
