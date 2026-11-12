@@ -44,11 +44,12 @@
   "labels": ["dependencies"],
 
   "packageRules": [
-    // There is no point trying to find updates for commons dependencies: Commons, Rendering and
-    // Platform are released together, so their versions move as one and never on Renovate's watch.
-    // A repository that also produces such dependencies disables its own prefixes on top of this.
+    // There is no point trying to find updates for commons, rendering and platform dependencies:
+    // Commons, Rendering and Platform are released together, so their versions move as one and never
+    // on Renovate's watch, and an extension chooses the XWiki version it depends on on purpose, not
+    // because a more recent one exists.
     {
-      "matchPackagePrefixes": ["org.xwiki.commons:"],
+      "matchPackagePrefixes": ["org.xwiki.commons:", "org.xwiki.rendering:", "org.xwiki.platform:"],
       "enabled": false
     }
   ]
