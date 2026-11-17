@@ -44,6 +44,6 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 24
+          node-version: 26
       - name: Validate the presets
         run: npx --yes --package renovate@44 -- renovate-config-validator --strict --no-global renovate/*.json5
