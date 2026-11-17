@@ -1,0 +1,49 @@
+## ---------------------------------------------------------------------------
+## See the NOTICE file distributed with this work for additional
+## information regarding copyright ownership.
+##
+## This is free software; you can redistribute it and/or modify it
+## under the terms of the GNU Lesser General Public License as
+## published by the Free Software Foundation; either version 2.1 of
+## the License, or (at your option) any later version.
+##
+## This software is distributed in the hope that it will be useful,
+## but WITHOUT ANY WARRANTY; without even the implied warranty of
+## MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
+## Lesser General Public License for more details.
+##
+## You should have received a copy of the GNU Lesser General Public
+## License along with this software; if not, write to the Free
+## Software Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+## 02110-1301 USA, or see the FSF site: http://www.fsf.org.
+## ---------------------------------------------------------------------------
+## Validate the Renovate presets on every change: the xwiki repositories and, through the xwiki-contrib
+## preset extending them, every xwiki-contrib repository use them, and Renovate does not report an
+## invalid preset anywhere visible, it just stops working on all of them. --strict also fails on a
+## deprecated option that Renovate would otherwise silently migrate.
+name: Renovate configuration
+
+on:
+  push:
+    paths:
+      - 'renovate/**'
+      - '.github/workflows/renovate-config.yml'
+  pull_request:
+    paths:
+      - 'renovate/**'
+      - '.github/workflows/renovate-config.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Validate the presets
+        run: npx --yes --package renovate@44 -- renovate-config-validator --strict --no-global renovate/*.json5
