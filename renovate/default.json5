@@ -50,7 +50,7 @@
     // because a more recent one exists. The same goes for the old XWiki Enterprise artifacts, which
     // some platform upgrade tests and old extensions depend on in a specific version.
     {
-      "matchPackagePrefixes": ["org.xwiki.commons:", "org.xwiki.rendering:", "org.xwiki.platform:", "org.xwiki.enterprise:"],
+      "matchPackageNames": ["org.xwiki.commons:*", "org.xwiki.rendering:*", "org.xwiki.platform:*", "org.xwiki.enterprise:*"],
       "enabled": false
     }
   ]
