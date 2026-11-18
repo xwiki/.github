@@ -132,6 +132,109 @@ jobs:
           ## it is the caller and not this step that keeps the trust boundary.
           allow-unsafe-pr-checkout: true
 
+      ## A feature-deploy-* branch is a feature spanning several XWiki repositories: the ci.xwiki.org
+      ## build of such a branch deploys its snapshots under a version of its own,
+      ## <version>-<branch>-SNAPSHOT, and builds it against the snapshots of the branch with the same
+      ## name in the upstream repositories, so that a change in xwiki-commons is usable by the
+      ## xwiki-rendering and xwiki-platform branches relying on it. Building such a pull request against
+      ## the master snapshots instead fails as soon as it uses the upstream change, so the version is
+      ## changed here the way the CI changes it (see xwikiBuild.groovy in xwiki-jenkins-pipeline):
+      ##   - the parent is moved to the branch version only when that version exists, which the range
+      ##     [current],[branch] asks versions:update-parent for: an upstream repository without the
+      ##     branch keeps providing its master snapshots;
+      ##   - the project, its node packages and the commons.version and platform.version properties
+      ##     are moved to the branch version, but only once the CI deployed the branch of the
+      ##     repository itself (see below).
+      ## It runs before anything reads the poms, so that the Java version below is the one of the
+      ## parent the branch is built against. Only a branch of the repository itself is concerned:
+      ## the CI builds none of a fork's branches, so no snapshot exists for one, whatever its name.
+      ## The branch name is chosen by whoever opens the pull request, so it goes through the
+      ## environment and is checked before being used in a version, a command line or a sed
+      ## expression.
+      - name: Use the version of a feature-deploy branch
+        if: github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          PR_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          if [[ "$PR_BRANCH" != feature-deploy-* ]]; then
+            echo "Not a feature-deploy branch, building with the version of the poms"
+            exit 0
+          fi
+          if [[ ! "$PR_BRANCH" =~ ^feature-deploy-[A-Za-z0-9._-]+$ ]]; then
+            echo "::warning::The branch name [$PR_BRANCH] cannot be part of a version, building with the version of the poms"
+            exit 0
+          fi
+
+          ## The version is read from the raw pom, the project's own or else its parent's, as the CI
+          ## reads it.
+          VERSION=$(python3 - <<'PYTHON'
+          import xml.etree.ElementTree as ET
+          NS = '{http://maven.apache.org/POM/4.0.0}'
+          pom = ET.parse('pom.xml').getroot()
+          print((pom.findtext(NS + 'version') or pom.findtext(NS + 'parent/' + NS + 'version') or '').strip())
+          PYTHON
+          )
+          if [[ "$VERSION" != *-SNAPSHOT ]]; then
+            echo "::warning::The version [$VERSION] is not a snapshot, building with the version of the poms"
+            exit 0
+          fi
+          BRANCH_VERSION="${VERSION%-SNAPSHOT}-$PR_BRANCH-SNAPSHOT"
+
+          ## The build below only compiles the modules the pull request changes and downloads the
+          ## other modules of the repository, which exist at the branch version only once the CI
+          ## deployed the branch: its first build, or a branch whose CI build fails, has none. The
+          ## root artifact being deployed at the branch version is what tells that the CI did, and
+          ## until then the pull request is built with the version of the poms, as before.
+          ## It is resolved with Maven rather than looked up on a hardcoded server, so that it comes
+          ## from the repositories the profiles declare, the same ones the build resolves from.
+          ARTIFACT=$(python3 - <<'PYTHON'
+          import xml.etree.ElementTree as ET
+          NS = '{http://maven.apache.org/POM/4.0.0}'
+          pom = ET.parse('pom.xml').getroot()
+          group = pom.findtext(NS + 'groupId') or pom.findtext(NS + 'parent/' + NS + 'groupId') or ''
+          print('%s:%s' % (group.strip(), (pom.findtext(NS + 'artifactId') or '').strip()))
+          PYTHON
+          )
+          if ! mvn -B -ntp -q -N -P"$MAVEN_PROFILES" \
+            org.apache.maven.plugins:maven-dependency-plugin:3.8.1:get -Dtransitive=false \
+            -Dartifact="$ARTIFACT:$BRANCH_VERSION:pom"; then
+            echo "::warning::[$ARTIFACT:$BRANCH_VERSION] is not deployed (yet), building with the version of the poms"
+            exit 0
+          fi
+          echo "Building with the version [$BRANCH_VERSION] of the branch"
+
+          PARENT_VERSION=$(python3 - <<'PYTHON'
+          import xml.etree.ElementTree as ET
+          NS = '{http://maven.apache.org/POM/4.0.0}'
+          print((ET.parse('pom.xml').getroot().findtext(NS + 'parent/' + NS + 'version') or '').strip())
+          PYTHON
+          )
+          if [[ -n "$PARENT_VERSION" ]]; then
+            mvn -B -ntp -N -P"$MAVEN_PROFILES" versions:update-parent -DallowSnapshots=true \
+              -DparentVersion="[$PARENT_VERSION],[$BRANCH_VERSION]" -DgenerateBackupPoms=false
+          fi
+          mvn -B -ntp -P"$MAVEN_PROFILES" versions:set -DnewVersion="$BRANCH_VERSION" \
+            -DgenerateBackupPoms=false
+
+          ## The node packages, except the root of the workspace and the private ones, which the CI
+          ## leaves alone as well.
+          python3 - "$BRANCH_VERSION" <<'PYTHON'
+          import json
+          import pathlib
+          import sys
+          for path in pathlib.Path('.').rglob('package.json'):
+              if 'node_modules' in path.parts or path.parent == pathlib.Path('.'):
+                  continue
+              package = json.loads(path.read_text(encoding='utf-8'))
+              if package.get('private') is True:
+                  continue
+              package['version'] = sys.argv[1]
+              path.write_text(json.dumps(package, indent=2) + '\n', encoding='utf-8')
+          PYTHON
+
+          sed -e "s/<commons.version>.*<\/commons.version>/<commons.version>$BRANCH_VERSION<\/commons.version>/" -i pom.xml
+          sed -e "s/<platform.version>.*<\/platform.version>/<platform.version>$BRANCH_VERSION<\/platform.version>/" -i pom.xml
+
       ## The JDK to build with is the one the branch targets, which is the xwiki.java.version property
       ## of the effective root pom. It is read with Maven rather than searched for in the pom text
       ## because the property is not necessarily declared in the repository being built: xwiki-rendering
