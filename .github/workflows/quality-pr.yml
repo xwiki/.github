@@ -143,7 +143,8 @@ jobs:
       ##     [current],[branch] asks versions:update-parent for: an upstream repository without the
       ##     branch keeps providing its master snapshots;
       ##   - the project, its node packages and the commons.version and platform.version properties
-      ##     are moved to the branch version.
+      ##     are moved to the branch version, but only once the CI deployed the branch of the
+      ##     repository itself (see below).
       ## It runs before anything reads the poms, so that the Java version below is the one of the
       ## parent the branch is built against. Only a branch of the repository itself is concerned:
       ## the CI builds none of a fork's branches, so no snapshot exists for one, whatever its name.
@@ -178,6 +179,28 @@ jobs:
             exit 0
           fi
           BRANCH_VERSION="${VERSION%-SNAPSHOT}-$PR_BRANCH-SNAPSHOT"
+
+          ## The build below only compiles the modules the pull request changes and downloads the
+          ## other modules of the repository, which exist at the branch version only once the CI
+          ## deployed the branch: its first build, or a branch whose CI build fails, has none. The
+          ## root artifact being deployed at the branch version is what tells that the CI did, and
+          ## until then the pull request is built with the version of the poms, as before.
+          ## It is resolved with Maven rather than looked up on a hardcoded server, so that it comes
+          ## from the repositories the profiles declare, the same ones the build resolves from.
+          ARTIFACT=$(python3 - <<'PYTHON'
+          import xml.etree.ElementTree as ET
+          NS = '{http://maven.apache.org/POM/4.0.0}'
+          pom = ET.parse('pom.xml').getroot()
+          group = pom.findtext(NS + 'groupId') or pom.findtext(NS + 'parent/' + NS + 'groupId') or ''
+          print('%s:%s' % (group.strip(), (pom.findtext(NS + 'artifactId') or '').strip()))
+          PYTHON
+          )
+          if ! mvn -B -ntp -q -N -P"$MAVEN_PROFILES" \
+            org.apache.maven.plugins:maven-dependency-plugin:3.8.1:get -Dtransitive=false \
+            -Dartifact="$ARTIFACT:$BRANCH_VERSION:pom"; then
+            echo "::warning::[$ARTIFACT:$BRANCH_VERSION] is not deployed (yet), building with the version of the poms"
+            exit 0
+          fi
           echo "Building with the version [$BRANCH_VERSION] of the branch"
 
           PARENT_VERSION=$(python3 - <<'PYTHON'
