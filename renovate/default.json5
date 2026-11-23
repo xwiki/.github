@@ -29,6 +29,16 @@
  * in "ignoreDeps" has to repeat the entries below alongside its own.
  */
 {
+  // Start from Renovate's recommended setup: among other things it ignores the test directories (whose POMs are test
+  // data, not dependencies of the project), groups the artifacts of a library released together into one pull
+  // request, and works around known broken versions (e.g. the ancient 2003xxxx "versions" of commons-* artifacts).
+  "extends": ["config:recommended"],
+
+  // The repositories use JIRA, not GitHub issues, so there is nowhere to put a dependency dashboard.
+  "dependencyDashboard": {
+    "enabled": false
+  },
+
   // We want all suggestions right away
   "prHourlyLimit" : 0,
   "prConcurrentLimit" : 0,
