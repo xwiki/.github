@@ -62,6 +62,14 @@
     {
       "matchPackageNames": ["org.xwiki.commons:*", "org.xwiki.rendering:*", "org.xwiki.platform:*", "org.xwiki.enterprise:*"],
       "enabled": false
+    },
+
+    // Never propose the versions Atlassian publishes of the libraries it forks (e.g.
+    // org.hibernate:hibernate-core 5.6.15.Final-atlassian-4): they are builds for Atlassian's own products, not
+    // releases of the library, and they sort above the real upstream releases.
+    {
+      "matchPackageNames": ["*"],
+      "allowedVersions": "!/atlassian/"
     }
   ]
 }
